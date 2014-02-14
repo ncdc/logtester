@@ -88,6 +88,7 @@ end
 
 #logger = LoggerExecutor.new
 #producer = ProducerExecutor.new(100, 0.01)
+start_time = Time.now
 producer_logger = ProducerLoggerExecutor.new(100, 0.0005)
 logger_pidstat = PidstatExecutor.new(producer_logger.logger_pid)
 producer_pidstat = PidstatExecutor.new(producer_logger.producer_pid)
@@ -98,6 +99,10 @@ logger_pidstat.stop
 producer_pidstat.stop
 rsyslog_pidstat.stop
 producer_logger.stop
+end_time = Time.now
+puts "Start time: #{start_time}"
+puts "End time: #{end_time}"
+puts "Total time (seconds): #{end_time - start_time}"
 puts "Logger pidstat"
 puts logger_pidstat.metrics
 puts "Rsyslog pidstat"
