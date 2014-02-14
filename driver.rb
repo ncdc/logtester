@@ -43,7 +43,7 @@ class PidstatExecutor < Executor
     :system_cpu,
     :guest_cpu,
     :total_cpu_percent,
-    :total_cpu,
+    :cpu_number,
     :minor_page_faults,
     :major_page_faults,
     :virtual_size,
@@ -89,8 +89,18 @@ end
 #logger = LoggerExecutor.new
 #producer = ProducerExecutor.new(100, 0.01)
 producer_logger = ProducerLoggerExecutor.new(100, 0.0005)
-pidstat = PidstatExecutor.new(producer_logger.logger_pid)
-sleep 10
-pidstat.stop
+logger_pidstat = PidstatExecutor.new(producer_logger.logger_pid)
+producer_pidstat = PidstatExecutor.new(producer_logger.producer_pid)
+rsyslog_pid = `pgrep rsyslog`.to_i
+rsyslog_pidstat = PidstatExecutor.new(rsyslog_pid)
+sleep 5
+logger_pidstat.stop
+producer_pidstat.stop
+rsyslog_pidstat.stop
 producer_logger.stop
-puts pidstat.metrics
+puts "Logger pidstat"
+puts logger_pidstat.metrics
+puts "Rsyslog pidstat"
+puts rsyslog_pidstat.metrics
+puts "Producer pidstat"
+puts producer_pidstat.metrics
