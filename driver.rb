@@ -1,19 +1,7 @@
 #!/bin/env ruby
 
 require 'open3'
-
-class Executor
-  attr_reader :pid
-
-  def initialize(command)
-    @io = IO.popen(command)
-    @pid = @io.pid
-  end
-
-  def stop
-    Process.kill("TERM", @pid)
-  end
-end
+require 'thor'
 
 class ProducerLoggerExecutor
   def initialize(message_length, delay)
@@ -35,7 +23,7 @@ class ProducerLoggerExecutor
   end
 end
 
-class PidstatExecutor < Executor
+class PidstatExecutor
   FIELD_ORDER = [
     :time,
     :pid,
@@ -54,12 +42,17 @@ class PidstatExecutor < Executor
     :command
   ]
 
-  attr_reader :metrics
+  attr_reader :metrics, :pid
 
   def initialize(logger_pid)
-    super("pidstat -p #{logger_pid} -h -r -u -w 1")
+    @io = IO.popen("pidstat -p #{logger_pid} -h -r -u -w 1")
+    @pid = @io.pid
     @metrics = []
     Thread.new { process() }
+  end
+
+  def stop
+    Process.kill("TERM", @pid)
   end
 
   def process
@@ -86,8 +79,6 @@ class PidstatExecutor < Executor
   end
 end
 
-#logger = LoggerExecutor.new
-#producer = ProducerExecutor.new(100, 0.01)
 start_time = Time.now
 producer_logger = ProducerLoggerExecutor.new(100, 0.0005)
 logger_pidstat = PidstatExecutor.new(producer_logger.logger_pid)
