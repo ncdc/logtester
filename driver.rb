@@ -4,9 +4,9 @@ require 'open3'
 require 'thor'
 
 class ProducerLoggerExecutor
-  def initialize(message_length, delay)
-    producer_command = "/root/rubylogger/producer.rb #{message_length} #{delay}"
-    logger_command = "/root/go/src/github.com/ncdc/gologger/gologger"
+  def initialize(message_length, delay, queue_size)
+    producer_command = "producer.rb #{message_length} #{delay}"
+    logger_command = "gologger -queuesize #{queue_size}"
     @wait_threads = Open3.pipeline_start(producer_command, logger_command)
   end
 
@@ -79,24 +79,47 @@ class PidstatExecutor
   end
 end
 
-start_time = Time.now
-producer_logger = ProducerLoggerExecutor.new(100, 0.0005)
-logger_pidstat = PidstatExecutor.new(producer_logger.logger_pid)
-producer_pidstat = PidstatExecutor.new(producer_logger.producer_pid)
-rsyslog_pid = `pgrep rsyslog`.to_i
-rsyslog_pidstat = PidstatExecutor.new(rsyslog_pid)
-sleep 5
-logger_pidstat.stop
-producer_pidstat.stop
-rsyslog_pidstat.stop
-producer_logger.stop
-end_time = Time.now
-puts "Start time: #{start_time}"
-puts "End time: #{end_time}"
-puts "Total time (seconds): #{end_time - start_time}"
-puts "Logger pidstat"
-puts logger_pidstat.metrics
-puts "Rsyslog pidstat"
-puts rsyslog_pidstat.metrics
-puts "Producer pidstat"
-puts producer_pidstat.metrics
+class MyCLI < Thor
+  default_task :execute
+
+  desc "execute", "run the logging test"
+  option :logger_queue_size, type: :numeric, default: 100, aliases: :q
+  option :message_length, type: :numeric, default: 100, aliases: :m
+  option :message_rate, type: :numeric, default: 0.0005, aliases: :r
+  option :test_length, type: :numeric, default: 10, aliases: :t
+  def execute
+    `echo '' | sudo tee /var/log/messages`
+    `sudo service rsyslog restart`
+    start_time = Time.now
+
+    producer_logger = ProducerLoggerExecutor.new(options[:message_length],
+                                                 options[:message_rate],
+                                                 options[:logger_queue_size])
+
+    logger_pidstat = PidstatExecutor.new(producer_logger.logger_pid)
+    producer_pidstat = PidstatExecutor.new(producer_logger.producer_pid)
+    rsyslog_pid = `pgrep rsyslog`.to_i
+    rsyslog_pidstat = PidstatExecutor.new(rsyslog_pid)
+
+    sleep options[:test_length]
+
+    logger_pidstat.stop
+    producer_pidstat.stop
+    rsyslog_pidstat.stop
+    producer_logger.stop
+
+    end_time = Time.now
+
+    puts "Start time: #{start_time}"
+    puts "End time: #{end_time}"
+    puts "Total time (seconds): #{end_time - start_time}"
+    puts "Logger pidstat"
+    puts logger_pidstat.metrics
+    puts "Rsyslog pidstat"
+    puts rsyslog_pidstat.metrics
+    puts "Producer pidstat"
+    puts producer_pidstat.metrics
+  end
+end
+
+MyCLI.start(ARGV)
