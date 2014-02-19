@@ -40,6 +40,18 @@
         position: relative;
         left: 8px;
       }
+
+      .stats {
+        font-family: "HelveticaNeue-CondensedBold","Helvetica Neue","Arial Narrow",Arial,sans-serif;
+        font-weight: bold;
+        -webkit-font-smoothing: antialiased;
+        color: #999;
+      }
+
+      .stats .data {
+        color: #000;
+      }
+
   %body
     .container
       .row
@@ -62,6 +74,15 @@
               %input#inputBufferSize.form-control(name="inputBufferSize" value="2048")
             %button#go.btn.btn-default(type="button") Submit
         .col-md-5
+          .row
+            .col-md-12
+              #logshifter.stats
+                #avgReadLatency
+                  AVG READ LATENCY
+                  .data
+                #avgWriteDuration
+                  AVG WRITE DURATION
+                  .data
           .row
             .col-md-6
               .graph-container#loggerCpuContainer
@@ -125,16 +146,21 @@
 
         var stats = message.stats;
 
-        loggerCpuGraph.series.addData({
-          system: parseFloat(stats['system_cpu']),
-          user: parseFloat(stats['user_cpu']),
-        });
-        loggerCpuGraph.render();
+        if (message.type == 'pidstat') {
+          loggerCpuGraph.series.addData({
+            system: parseFloat(stats['system_cpu']),
+            user: parseFloat(stats['user_cpu']),
+          });
+          loggerCpuGraph.render();
 
-        loggerMemGraph.series.addData({
-          rss: parseInt(stats['resident_set_size'])
-        });
-        loggerMemGraph.render();
+          loggerMemGraph.series.addData({
+            rss: parseInt(stats['resident_set_size'])
+          });
+          loggerMemGraph.render();
+        } else if (message.type == 'stats') {
+          $('#logshifter #avgReadLatency .data').text(Number(stats['InputAvgReadLatency']).toFixed(2) + "us");
+          $('#logshifter #avgWriteDuration .data').text(Number(stats['OutputAvgWriteDuration']).toFixed(2) + "us");
+        }
       }
 
       $('#go').on('click', function(event) {

@@ -4,21 +4,26 @@ require 'open3'
 require 'thor'
 require 'tempfile'
 require 'json'
+require 'filewatch/tail'
 
 class ProducerLoggerExecutor
   def initialize(options)
     producer_command = "producer.rb #{options[:message_length]} #{options[:message_rate]}"
     @temp_config = Tempfile.open('logshifter.conf')
+    @temp_stats = Tempfile.open('logshifter.stats')
     config_data = <<EOF
 queuesize=#{options[:queue_size]}
 inputbuffersize=#{options[:input_buffer_size]}
 outputtype=syslog
+statsfilename=#{@temp_stats.path}
+statsinterval=1s
 EOF
 
     @temp_config.write(config_data)
     @temp_config.close
     logger_command = "logshifter -config #{@temp_config.path}"
     @wait_threads = Open3.pipeline_start(producer_command, logger_command)
+    LogshifterStatsTailer.new(@temp_stats.path, options[:channel])
   end
 
   def stop
@@ -86,10 +91,22 @@ class PidstatExecutor
       data.split(" ").each_with_index do |value, index|
         stats[FIELD_ORDER[index]] = value
       end
-      @channel.push(JSON.generate({name: @name, stats: stats})) if @channel
+      @channel.push(JSON.generate({name: @name, type: 'pidstat', stats: stats})) if @channel
 
       # throw out the blank
       @io.readline
+    end
+  end
+end
+
+class LogshifterStatsTailer
+  def initialize(stats_file, channel)
+    Thread.new do
+      t = FileWatch::Tail.new
+      t.tail(stats_file)
+      t.subscribe do |path, line|
+        channel.push(JSON.generate({name: 'logshifter', type: 'stats', stats: JSON.parse(line)}))
+      end
     end
   end
 end
@@ -102,7 +119,7 @@ class Driver
       `sudo service rsyslog restart`
       start_time = Time.now
 
-      producer_logger = ProducerLoggerExecutor.new(options)
+      producer_logger = ProducerLoggerExecutor.new(options.merge(channel:@channel))
 
       logger_pidstat = PidstatExecutor.new('logshifter', producer_logger.logger_pid, @channel)
       producer_pidstat = PidstatExecutor.new('producer', producer_logger.producer_pid, @channel)
