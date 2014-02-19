@@ -1,0 +1,142 @@
+!!! 5
+%html(lang="en")
+  %head
+    %title Hi
+    %script(src="http://code.jquery.com/jquery-1.11.0.min.js")
+    %link{:href=>"//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css", :rel=>"stylesheet"}
+    %script{:src=>"//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"}
+    %script{:src=>"http://d3js.org/d3.v3.min.js"}
+    %script{:src=>"rickshaw.js"}
+    %link{:href=>"rickshaw.min.css", :rel=>"stylesheet"}
+    :css
+      body { margin-top: 10px; }
+
+      .graph-container {
+        position: relative;
+      }
+
+      .graph {
+        position: relative;
+        display: inline-block;
+        left: 40px;
+      }
+
+      .y-axis {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 40px;
+      }
+
+      .legend-container {
+        position: absolute;
+        right: 0;
+        bottom: 26px;
+        width: 0;
+      }
+
+      .legend {
+        display: inline-block;
+        position: relative;
+        left: 8px;
+      }
+  %body
+    .container
+      .row
+        .col-md-4
+          %form#inputs(role="form")
+            .form-group
+              %label(for="testLength") Test Length
+              %input#testLength.form-control(name="testLength" value="5")
+            .form-group
+              %label(for="messageSize") Message Size
+              %input#messageSize.form-control(name="messageSize" value="100")
+            .form-group
+              %label(for="messageRate") Messages Per Second
+              %input#messageRate.form-control(name="messageRate" value="5000")
+            .form-group
+              %label(for="queueDepth") Logshifter Queue Depth
+              %input#queueDepth.form-control(name="queueDepth" value="100")
+            .form-group
+              %label(for="inputBufferSize") Logshifter Input Buffer Size
+              %input#inputBufferSize.form-control(name="inputBufferSize" value="2048")
+            %button#go.btn.btn-default(type="button") Submit
+        .col-md-5
+          .row
+            .col-md-6
+              .graph-container#loggerCpuContainer
+                .y-axis
+                .graph
+                .legend-container
+                  .smoother(title="Smoothing")
+                  .legend
+          .row
+            .col-md-6
+              .graph_container#loggerMemContainer
+                .y-axis
+                .graph
+                .legend-container
+                  .smoother(title="Smoothing")
+                  .legend
+
+    :javascript
+      function createGraph(containerName, legendNames) {
+        var graph = new Rickshaw.Graph({
+          element: $(containerName + " .graph")[0],
+          width: 300,
+          height: 200,
+          renderer: 'line',
+          series: new Rickshaw.Series.FixedDuration(legendNames, undefined, {
+            timeInterval: 1000,
+            maxDataPoints: 100,
+            timeBase: new Date().getTime() / 1000
+          })
+        });
+
+        var yAxis = new Rickshaw.Graph.Axis.Y({
+          graph: graph,
+          orientation: 'left',
+          element: $(containerName + " .y-axis")[0]
+        });
+
+        var legend = new Rickshaw.Graph.Legend({
+          graph: graph,
+          element: $(containerName + " .legend")[0]
+        });
+
+        var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
+          graph: graph,
+          legend: legend
+        });
+
+        return graph;
+      }
+
+      var loggerCpuGraph = createGraph("#loggerCpuContainer", [{name: 'system'}, {name: 'user'}]);
+      var loggerMemGraph = createGraph("#loggerMemContainer", [{name: 'rss'}]);
+
+      var ws = new WebSocket('ws://10.3.8.6:8000');
+      ws.onmessage = function(event) {
+        message = JSON.parse(event.data);
+
+        if(message.name != 'logshifter') {
+          return;
+        }
+
+        var stats = message.stats;
+
+        loggerCpuGraph.series.addData({
+          system: parseFloat(stats['system_cpu']),
+          user: parseFloat(stats['user_cpu']),
+        });
+        loggerCpuGraph.render();
+
+        loggerMemGraph.series.addData({
+          rss: parseInt(stats['resident_set_size'])
+        });
+        loggerMemGraph.render();
+      }
+
+      $('#go').on('click', function(event) {
+        ws.send($('#inputs').serialize());
+      });
