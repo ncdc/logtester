@@ -1,44 +1,44 @@
 !!! 5
 %html(lang="en")
   %head
-    %title Hi
+    %title Hi There
     %script(src="http://code.jquery.com/jquery-1.11.0.min.js")
     %link{:href=>"//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css", :rel=>"stylesheet"}
     %script{:src=>"//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"}
-    %script{:src=>"http://d3js.org/d3.v3.min.js"}
-    %script{:src=>"rickshaw.js"}
-    %link{:href=>"rickshaw.min.css", :rel=>"stylesheet"}
+    -#%script{:src=>"http://d3js.org/d3.v3.min.js"}
+    -#%script{:src=>"rickshaw.js"}
+    -#%link{:href=>"rickshaw.min.css", :rel=>"stylesheet"}
+    %script{:src=>"//cdnjs.cloudflare.com/ajax/libs/flot/0.8.2/jquery.flot.min.js"}
     :css
       body { margin-top: 10px; }
 
-      .graph-container {
-        position: relative;
+      .int {
+        float: left;
+      }
+
+      .tot {
+        text-align: right;
+      }
+
+      .statHeader {
+        text-align: center;
+        border-bottom: solid 1px #ddd;
+      }
+
+      .int, .tot {
+        font-size: small;
       }
 
       .graph {
-        position: relative;
-        display: inline-block;
-        left: 40px;
+        width: 382px;
+        height: 116px;
       }
 
-      .y-axis {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 40px;
-      }
-
-      .legend-container {
-        position: absolute;
-        right: 0;
-        bottom: 26px;
-        width: 0;
-      }
-
-      .legend {
-        display: inline-block;
-        position: relative;
-        left: 8px;
+      .header {
+        font-family: "HelveticaNeue-CondensedBold","Helvetica Neue","Arial Narrow",Arial,sans-serif;
+        font-weight: bold;
+        -webkit-font-smoothing: antialiased;
+        color: #999;
       }
 
       .stats {
@@ -52,10 +52,22 @@
         color: #000;
       }
 
+      #tooltip {
+        position: absolute;
+        display: none;
+        top: 0;
+        left: 0;
+        border: 1px solid #fdd;
+        padding: 2px;
+        background-color: #fee;
+        opacity: 0.80;
+      }
+
   %body
+    #tooltip
     .container
       .row
-        .col-md-4
+        .col-md-2
           %form#inputs(role="form")
             .form-group
               %label(for="testLength") Test Length
@@ -73,96 +85,170 @@
               %label(for="inputBufferSize") Logshifter Input Buffer Size
               %input#inputBufferSize.form-control(name="inputBufferSize" value="2048")
             %button#go.btn.btn-default(type="button") Submit
-        .col-md-5
+        .col-md-8
           .row
-            .col-md-12
+            .col-md-3
               #logshifter.stats
-                #avgReadLatency
+                #avgReadLatency.statHeader
                   AVG READ LATENCY
-                  .data
-                #avgWriteDuration
+                  %br/
+                  .int
+                    int
+                    .data -
+                  .tot
+                    tot
+                    .data -
+                %p/
+                #inputLines.statHeader
+                  LINES IN
+                  %br/
+                  .int
+                    int
+                    .data -
+                  .tot
+                    tot
+                    .data -
+                %p/
+                #inputDrops.statHeader
+                  LINES DROPPED
+                  %br/
+                  .int
+                    int
+                    .data -
+                  .tot
+                    tot
+                    .data -
+                %p/
+                #avgWriteDuration.statHeader
                   AVG WRITE DURATION
-                  .data
-          .row
-            .col-md-6
-              .graph-container#loggerCpuContainer
-                .y-axis
-                .graph
-                .legend-container
-                  .smoother(title="Smoothing")
-                  .legend
-          .row
-            .col-md-6
-              .graph_container#loggerMemContainer
-                .y-axis
-                .graph
-                .legend-container
-                  .smoother(title="Smoothing")
-                  .legend
+                  %br/
+                  .int
+                    int
+                    .data -
+                  .tot
+                    tot
+                    .data -
+                %p/
+                #outputLines.statHeader
+                  LINES OUT
+                  %br/
+                  .int
+                    int
+                    .data -
+                  .tot
+                    tot
+                    .data -
+            .col-md-9
+              .row
+                .col-md-12
+                  .header LOGSHIFTER CPU
+                  #loggerCpuGraph.graph
+              %p/
+              .row
+                .col-md-12
+                  .header LOGSHIFTER RSS
+                  #loggerRamGraph.graph
+              %p/
+              .row
+                .col-md-12
+                  .header RSYSLOG CPU
+                  #rsyslogCpuGraph.graph
+              %p/
+              .row
+                .col-md-12
+                  .header RSYSLOG RSS
+                  #rsyslogRamGraph.graph
 
-    :javascript
-      function createGraph(containerName, legendNames) {
-        var graph = new Rickshaw.Graph({
-          element: $(containerName + " .graph")[0],
-          width: 300,
-          height: 200,
-          renderer: 'line',
-          series: new Rickshaw.Series.FixedDuration(legendNames, undefined, {
-            timeInterval: 1000,
-            maxDataPoints: 100,
-            timeBase: new Date().getTime() / 1000
-          })
-        });
+    :coffee
+      loggerCpuData = [[]]
+      loggerRamData = [[]]
+      rsyslogCpuData = [[]]
+      rsyslogRamData = [[]]
+      seriesIndex = {}
+      maxDataPoints = 5
 
-        var yAxis = new Rickshaw.Graph.Axis.Y({
-          graph: graph,
-          orientation: 'left',
-          element: $(containerName + " .y-axis")[0]
-        });
 
-        var legend = new Rickshaw.Graph.Legend({
-          graph: graph,
-          element: $(containerName + " .legend")[0]
-        });
+      addData = (seriesName, series, which, y) ->
+        index = seriesIndex[seriesName] ||= 0
+        series[which].push([index++, y])
+        seriesIndex[seriesName] = index
+        overage = series[which].length - maxDataPoints
+        series[which].splice(0, overage) if overage > 0
 
-        var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
-          graph: graph,
-          legend: legend
-        });
+      graphOptions =
+        grid:
+          hoverable: true
+        series:
+          lines:
+            show: true
+          points:
+            show: true
+        xaxis:
+          show: false
+        yaxis:
+          min: 0
 
-        return graph;
-      }
+      loggerCpuGraph = $.plot($('#loggerCpuGraph'), loggerCpuData, graphOptions)
+      loggerRamGraph = $.plot($('#loggerRamGraph'), loggerRamData, graphOptions)
+      rsyslogCpuGraph = $.plot($('#rsyslogCpuGraph'), rsyslogCpuData, graphOptions)
+      rsyslogRamGraph = $.plot($('#rsyslogRamGraph'), rsyslogRamData, graphOptions)
 
-      var loggerCpuGraph = createGraph("#loggerCpuContainer", [{name: 'system'}, {name: 'user'}]);
-      var loggerMemGraph = createGraph("#loggerMemContainer", [{name: 'rss'}]);
+      updateGraph = (graph, data) ->
+        graph.setData(data)
+        graph.setupGrid()
+        graph.draw()
 
-      var ws = new WebSocket('ws://10.3.8.6:8000');
-      ws.onmessage = function(event) {
-        message = JSON.parse(event.data);
+      showTooltip = (x, y, contents) ->
+        $('#tooltip').css(
+                        top: y + 5
+                        left: x + 5
+                      )
+                     .text(contents)
+                     .fadeIn(200)
 
-        if(message.name != 'logshifter') {
-          return;
-        }
+      previousPoint = null
 
-        var stats = message.stats;
+      $('.graph').on 'plothover', (event, pos, item)->
+        if item
+          if previousPoint != item.dataIndex
+            previousPoint = item.dataIndex
+            $('#tooltip').hide()
+            x = item.datapoint[0].toFixed(2)
+            y = item.datapoint[1].toFixed(2)
+            showTooltip(item.pageX, item.pageY, y)
+        else
+          $('#tooltip').hide()
+          previousPoint = null
 
-        if (message.type == 'pidstat') {
-          loggerCpuGraph.series.addData({
-            system: parseFloat(stats['system_cpu']),
-            user: parseFloat(stats['user_cpu']),
-          });
-          loggerCpuGraph.render();
+      ws = new WebSocket('ws://10.3.8.6:8000')
+      ws.onmessage = (event)->
+        message = JSON.parse(event.data)
 
-          loggerMemGraph.series.addData({
-            rss: parseInt(stats['resident_set_size'])
-          });
-          loggerMemGraph.render();
-        } else if (message.type == 'stats') {
-          $('#logshifter #avgReadLatency .data').text(Number(stats['InputAvgReadLatency']).toFixed(2) + "us");
-          $('#logshifter #avgWriteDuration .data').text(Number(stats['OutputAvgWriteDuration']).toFixed(2) + "us");
-        }
-      }
+        stats = message.stats
 
-      $('#go').on('click', function(event) {
-        ws.send($('#inputs').serialize());
-      });
+        if message.name == 'logshifter'
+          if message.type == 'pidstat'
+            addData('loggerCpu', loggerCpuData, 0, parseFloat(stats['total_cpu_percent']))
+            updateGraph(loggerCpuGraph, loggerCpuData)
+
+            addData('loggerRam', loggerRamData, 0, parseInt(stats['resident_set_size']))
+            updateGraph(loggerRamGraph, loggerRamData)
+          else if message.type == 'stats'
+            $('#logshifter #avgReadLatency .int .data').text(Number(stats['InputAvgReadLatencyCurrent']).toFixed(2) + "us")
+            $('#logshifter #avgReadLatency .tot .data').text(Number(stats['InputAvgReadLatencyTotal']).toFixed(2) + "us")
+            ###
+            $('#logshifter #avgWriteDuration .data').text(Number(stats['OutputAvgWriteDuration']).toFixed(2) + "us")
+            $('#logshifter #inputLines .data').text(stats['InputLinesTotal'])
+            $('#logshifter #inputDrops .data').text(stats['InputDrops'])
+            $('#logshifter #outputLines .data').text(stats['OutputLinesTotal'])
+            ###
+
+        if message.name == 'rsyslog'
+          addData('rsyslogCpu', rsyslogCpuData, 0, parseFloat(stats['total_cpu_percent']))
+          updateGraph(rsyslogCpuGraph, rsyslogCpuData)
+
+          addData('rsyslogRam', rsyslogRamData, 0, parseInt(stats['resident_set_size']))
+          updateGraph(rsyslogRamGraph, rsyslogRamData)
+
+      $('#go').click ->
+        ws.send($('#inputs').serialize())

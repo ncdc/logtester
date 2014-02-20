@@ -15,13 +15,11 @@ class ProducerLoggerExecutor
 queuesize=#{options[:queue_size]}
 inputbuffersize=#{options[:input_buffer_size]}
 outputtype=syslog
-statsfilename=#{@temp_stats.path}
-statsinterval=1s
 EOF
 
     @temp_config.write(config_data)
     @temp_config.close
-    logger_command = "logshifter -config #{@temp_config.path}"
+    logger_command = "logshifter -config #{@temp_config.path} -statsfilename #{@temp_stats.path} -statsinterval 1s"
     @wait_threads = Open3.pipeline_start(producer_command, logger_command)
     LogshifterStatsTailer.new(@temp_stats.path, options[:channel])
   end
