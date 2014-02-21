@@ -19,7 +19,7 @@ EOF
 
     @temp_config.write(config_data)
     @temp_config.close
-    logger_command = "logshifter -config #{@temp_config.path} -statsfilename #{@temp_stats.path} -statsinterval 1s"
+    logger_command = "logshifter -config #{@temp_config.path} -statsfilename #{@temp_stats.path} -statsinterval 1s -tag logdriver"
     @wait_threads = Open3.pipeline_start(producer_command, logger_command)
     LogshifterStatsTailer.new(@temp_stats.path, options[:channel])
   end

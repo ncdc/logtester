@@ -61,6 +61,7 @@
         padding: 2px;
         background-color: #fee;
         opacity: 0.80;
+        z-index: 1000;
       }
 
   %body
@@ -88,57 +89,38 @@
         .col-md-8
           .row
             .col-md-3
+              #h2 Totals
               #logshifter.stats
                 #avgReadLatency.statHeader
                   AVG READ LATENCY
                   %br/
-                  .int
-                    int
-                    .data -
-                  .tot
-                    tot
-                    .data -
+                  .data -
                 %p/
                 #inputLines.statHeader
-                  LINES IN
+                  LINES READ
                   %br/
-                  .int
-                    int
-                    .data -
-                  .tot
-                    tot
-                    .data -
+                  .data -
                 %p/
                 #inputDrops.statHeader
                   LINES DROPPED
                   %br/
-                  .int
-                    int
-                    .data -
-                  .tot
-                    tot
-                    .data -
+                  .data -
                 %p/
                 #avgWriteDuration.statHeader
                   AVG WRITE DURATION
                   %br/
-                  .int
-                    int
-                    .data -
-                  .tot
-                    tot
-                    .data -
+                  .data -
                 %p/
                 #outputLines.statHeader
-                  LINES OUT
+                  LINES WRITTEN
                   %br/
-                  .int
-                    int
-                    .data -
-                  .tot
-                    tot
-                    .data -
+                  .data -
             .col-md-9
+              .row
+                .col-md-12
+                  .header LOGSHIFTER LINES
+                  #loggerLinesGraph.graph
+              %p/
               .row
                 .col-md-12
                   .header LOGSHIFTER CPU
@@ -160,20 +142,74 @@
                   #rsyslogRamGraph.graph
 
     :coffee
-      loggerCpuData = [[]]
-      loggerRamData = [[]]
-      rsyslogCpuData = [[]]
-      rsyslogRamData = [[]]
+      totalReadLatency = 0
+      totalLinesRead = 0
+      totalLinesDropped = 0
+      totalWriteTime = 0
+      totalLinesWritten = 0
+      totalWriteDuration = 0
       seriesIndex = {}
+      # in, drop, out
+      loggerLinesData = [
+        {
+          label: "read",
+          data: []
+        },
+        {
+          label: "drop",
+          data: []
+        },
+        {
+          label: "write",
+          data: []
+        }
+      ]
+      loggerCpuData = [{label: "cpu", data: []}]
+      loggerRamData = [{label: "rss", data: []}]
+      rsyslogCpuData = [{label: "cpu", data: []}]
+      rsyslogRamData = [{label: "rss", data: []}]
+      seriesIndex = {}
+      resetData = ->
+        $('#logshifter #inputDrops .data').text("-")
+        totalReadLatency = 0
+        totalLinesRead = 0
+        totalLinesDropped = 0
+        totalWriteTime = 0
+        totalLinesWritten = 0
+        totalWriteDuration = 0
+        seriesIndex = {}
+        # in, drop, out
+        loggerLinesData = [
+          {
+            label: "read",
+            data: []
+          },
+          {
+            label: "drop",
+            data: []
+          },
+          {
+            label: "write",
+            data: []
+          }
+        ]
+        loggerCpuData = [{label: "cpu", data: []}]
+        loggerRamData = [{label: "rss", data: []}]
+        rsyslogCpuData = [{label: "cpu", data: []}]
+        rsyslogRamData = [{label: "rss", data: []}]
+        seriesIndex = {}
+
+      resetData()
       maxDataPoints = 5
 
 
       addData = (seriesName, series, which, y) ->
-        index = seriesIndex[seriesName] ||= 0
-        series[which].push([index++, y])
-        seriesIndex[seriesName] = index
-        overage = series[which].length - maxDataPoints
-        series[which].splice(0, overage) if overage > 0
+        seriesIndex[seriesName] ||= []
+        index = seriesIndex[seriesName][which] ||= 0
+        series[which].data.push([index++, y])
+        seriesIndex[seriesName][which] = index
+        overage = series[which].data.length - maxDataPoints
+        series[which].data.splice(0, overage) if overage > 0
 
       graphOptions =
         grid:
@@ -187,7 +223,11 @@
           show: false
         yaxis:
           min: 0
+        legend:
+          show: true
+          position: 'sw'
 
+      loggerLinesGraph = $.plot($('#loggerLinesGraph'), loggerLinesData, graphOptions)
       loggerCpuGraph = $.plot($('#loggerCpuGraph'), loggerCpuData, graphOptions)
       loggerRamGraph = $.plot($('#loggerRamGraph'), loggerRamData, graphOptions)
       rsyslogCpuGraph = $.plot($('#rsyslogCpuGraph'), rsyslogCpuData, graphOptions)
@@ -215,7 +255,7 @@
             $('#tooltip').hide()
             x = item.datapoint[0].toFixed(2)
             y = item.datapoint[1].toFixed(2)
-            showTooltip(item.pageX, item.pageY, y)
+            showTooltip(item.pageX, item.pageY, item.series.label + ": " + y)
         else
           $('#tooltip').hide()
           previousPoint = null
@@ -234,8 +274,50 @@
             addData('loggerRam', loggerRamData, 0, parseInt(stats['resident_set_size']))
             updateGraph(loggerRamGraph, loggerRamData)
           else if message.type == 'stats'
-            $('#logshifter #avgReadLatency .int .data').text(Number(stats['InputAvgReadLatencyCurrent']).toFixed(2) + "us")
-            $('#logshifter #avgReadLatency .tot .data').text(Number(stats['InputAvgReadLatencyTotal']).toFixed(2) + "us")
+            if stats['input.read'] and stats['input.read.duration']
+              linesRead = Number(stats['input.read'])
+              readLatency = parseFloat(stats['input.read.duration'])
+              averageReadLatency = (readLatency / linesRead).toFixed(2)
+              # add to graph
+
+              totalLinesRead += linesRead
+              totalReadLatency += readLatency
+              averageReadLatency = (totalReadLatency / totalLinesRead).toFixed(2)
+              $('#logshifter #avgReadLatency .data').text(averageReadLatency + "us")
+
+              $('#logshifter #inputLines .data').text(totalLinesRead)
+
+              addData('loggerLines', loggerLinesData, 0, linesRead)
+
+            if stats['input.drop']
+              drops = Number(stats['input.drop'])
+              totalLinesDropped += drops
+              $('#logshifter #inputDrops .data').text(totalLinesDropped)
+              addData('loggerLines', loggerLinesData, 1, drops)
+            else
+              addData('loggerLines', loggerLinesData, 1, 0)
+
+            if stats['output.write']
+              linesOut = Number(stats['output.write'])
+              addData('loggerLines', loggerLinesData, 2, linesOut)
+              totalLinesWritten += linesOut
+              $('#logshifter #outputLines .data').text(totalLinesWritten)
+
+              writeDuration = parseFloat(stats['output.write.duration'])
+              averageWriteDuration = (writeDuration / linesOut).toFixed(2)
+              # add to graph
+              totalWriteDuration += writeDuration
+              averageWriteDuration = (totalWriteDuration / totalLinesWritten).toFixed(2)
+              $('#logshifter #avgWriteDuration .data').text(averageWriteDuration + "us")
+
+            else
+              addData('loggerLines', loggerLinesData, 2, 0)
+
+            updateGraph(loggerLinesGraph, loggerLinesData)
+
+
+
+
             ###
             $('#logshifter #avgWriteDuration .data').text(Number(stats['OutputAvgWriteDuration']).toFixed(2) + "us")
             $('#logshifter #inputLines .data').text(stats['InputLinesTotal'])
@@ -250,5 +332,7 @@
           addData('rsyslogRam', rsyslogRamData, 0, parseInt(stats['resident_set_size']))
           updateGraph(rsyslogRamGraph, rsyslogRamData)
 
+
       $('#go').click ->
+        resetData()
         ws.send($('#inputs').serialize())
